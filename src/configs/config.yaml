@@ -1,0 +1,41 @@
+MODELS:
+    A2C:
+        HIDDEN_DIM: 64
+        LR_ACTOR: 0.0001
+        LR_CRITIC: 0.0001
+        GAMMA: 0.99
+
+    SAC:
+        HIDDEN_DIM: 256
+        BATCH_SIZE: 128
+        MAX_STEPS: 500
+        GAMMA: 0.99
+        MEAN_LAMBDA: 0.001
+        STD_LAMBDA: 0.001
+        Z_LAMBDA: 0.0
+        SOFT_TAU: 0.01
+
+        LR_ACTOR: 0.0003
+        LR_CRITIC: 0.0003
+        LR_SOFTQ: 0.0003
+
+        INIT_WEIGHTS: 0.003
+        
+
+        ACTOR:
+            LOG_STD_MIN: -20
+            LOG_STD_MAX: 2
+            EPSILON: 
+
+            HIDDEN_DIM: 256
+            INIT_WEIGHTS: 0.003
+            EPSILON: 0.000001
+
+
+    
+        REPLAY_BUFFER:
+            CAPACITY: 1000000
+
+
+
+

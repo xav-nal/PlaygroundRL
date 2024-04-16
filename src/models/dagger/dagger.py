@@ -7,10 +7,8 @@ policy.
 """
 
 import logging
-import os
 import pathlib
 
-from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch as th
@@ -19,7 +17,7 @@ from stable_baselines3.common import policies, utils, vec_env
 from torch.utils import data as th_data
 
 
-from .beta_schedule import LinearBetaSchedule
+from .beta_schedule import BetaSchedule,LinearBetaSchedule
 from .trajectory_collector import InteractiveTrajectoryCollector
 from .bc import BC
 from .rollout import generate_trajectories
@@ -29,16 +27,14 @@ DEFAULT_N_EPOCHS: int = 4
 
 
 class DAggerTrainer():
-  
     """The default number of BC training epochs in `extend_and_update`."""
-
     def __init__(
         self,
         *,
         venv: vec_env.VecEnv,
-        scratch_dir: np.string,
+        scratch_dir: str,
         rng: np.random.Generator,
-        beta_schedule: Optional[Callable[[int], float]] = None,
+        beta_schedule: BetaSchedule = None,
         bc_trainer: BC,
     ):
         """Builds DAggerTrainer.
@@ -89,8 +85,6 @@ class DAggerTrainer():
     @property
     def batch_size(self) -> int:
         return self.bc_trainer.batch_size
-
-
 
     def extend_and_update(
         self,
@@ -148,45 +142,11 @@ class DAggerTrainer():
         beta = self.beta_schedule(self.round_num)
         collector = InteractiveTrajectoryCollector(
             venv=self.venv,
-            get_robot_acts=lambda acts: self.bc_trainer.policy.predict(acts)[0],
             beta=beta,
             save_dir=save_dir,
             rng=self.rng,
         )
         return collector
-
-    def save_trainer(self) -> Tuple[pathlib.Path, pathlib.Path]:
-        """Create a snapshot of trainer in the scratch/working directory.
-
-        The created snapshot can be reloaded with `reconstruct_trainer()`.
-        In addition to saving one copy of the policy in the trainer snapshot, this
-        method saves a second copy of the policy in its own file. Having a second copy
-        of the policy is convenient because it can be loaded on its own and passed to
-        evaluation routines for other algorithms.
-
-        Returns:
-            checkpoint_path: a path to one of the created `DAggerTrainer` checkpoints.
-            policy_path: a path to one of the created `DAggerTrainer` policies.
-        """
-        self.scratch_dir.mkdir(parents=True, exist_ok=True)
-
-        # save full trainer checkpoints
-        checkpoint_paths = [
-            self.scratch_dir / f"checkpoint-{self.round_num:03d}.pt",
-            self.scratch_dir / "checkpoint-latest.pt",
-        ]
-        for checkpoint_path in checkpoint_paths:
-            th.save(self, checkpoint_path)
-
-        # save policies separately for convenience
-        policy_paths = [
-            self.scratch_dir / f"policy-{self.round_num:03d}.pt",
-            self.scratch_dir / "policy-latest.pt",
-        ]
-        for policy_path in policy_paths:
-            util.save_policy(self.policy, policy_path)
-
-        return checkpoint_paths[0], policy_paths[0]
 
 
 class SimpleDAggerTrainer(DAggerTrainer):
@@ -196,11 +156,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
         self,
         *,
         venv: vec_env.VecEnv,
-        scratch_dir: types.AnyPath,
+        scratch_dir: str,
         expert_policy: policies.BasePolicy,
         rng: np.random.Generator,
-        expert_trajs: Optional[Sequence[types.Trajectory]] = None,
-        **dagger_trainer_kwargs,
+        expert_trajs: list = None,
     ):
         """Builds SimpleDAggerTrainer.
 
@@ -226,13 +185,12 @@ class SimpleDAggerTrainer(DAggerTrainer):
             venv=venv,
             scratch_dir=scratch_dir,
             rng=rng,
-            **dagger_trainer_kwargs,
         )
+
         self.expert_policy = expert_policy
         if expert_policy.observation_space != self.venv.observation_space:
-            raise ValueError(
-                "Mismatched observation space between expert_policy and venv",
-            )
+            raise ValueError("Mismatched observation space between expert_policy and venv")
+        
         if expert_policy.action_space != self.venv.action_space:
             raise ValueError("Mismatched action space between expert_policy and venv")
 

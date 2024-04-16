@@ -9,15 +9,9 @@ import itertools
 
 import gymnasium as gym
 import numpy as np
-import torch as th
+import torch 
 import tqdm
 from stable_baselines3.common import policies, torch_layers, utils, vec_env
-
-# from imitation.algorithms import base as algo_base
-# from imitation.data import rollout, types
-# from imitation.policies import base as policy_base
-# from imitation.util import logger as imit_logger
-# from imitation.util import util
 
 
 @dataclasses.dataclass(frozen=True)
@@ -26,25 +20,20 @@ class BatchIteratorWithEpochEndCallback:
 
     Will throw an exception when an epoch contains no batches.
     """
+    
+    batch_loader: 
+    n_epochs: int
+    n_batches: int
 
-    batch_loader: Iterable[types.TransitionMapping]
-    n_epochs: Optional[int]
-    n_batches: Optional[int]
-    on_epoch_end: Optional[Callable[[int], None]]
 
     def __post_init__(self) -> None:
-        epochs_and_batches_specified = (
-            self.n_epochs is not None and self.n_batches is not None
-        )
-        neither_epochs_nor_batches_specified = (
-            self.n_epochs is None and self.n_batches is None
-        )
-        if epochs_and_batches_specified or neither_epochs_nor_batches_specified:
-            raise ValueError(
-                "Must provide exactly one of `n_epochs` and `n_batches` arguments.",
-            )
+        epochs_and_batches_specified = ( self.n_epochs is not None and self.n_batches is not None )
+        neither_epochs_nor_batches_specified = ( self.n_epochs is None and self.n_batches is None )
 
-    def __iter__(self) -> Iterator[types.TransitionMapping]:
+        if epochs_and_batches_specified or neither_epochs_nor_batches_specified:
+            raise ValueError( "Must provide exactly one of `n_epochs` and `n_batches` arguments." )
+
+    def __iter__(self) -> [types.TransitionMapping]:
         def batch_iterator() -> Iterator[types.TransitionMapping]:
             # Note: the islice here ensures we do not exceed self.n_epochs
             for epoch_num in itertools.islice(itertools.count(), self.n_epochs):
@@ -64,6 +53,18 @@ class BatchIteratorWithEpochEndCallback:
         # Note: the islice here ensures we do not exceed self.n_batches
         return itertools.islice(batch_iterator(), self.n_batches)
 
+@dataclasses.dataclass(frozen=True)
+class BCTrainingMetrics:
+    """Container for the different components of behavior cloning loss."""
+
+    neglogp: torch.Tensor
+    entropy: torch.Tensor
+    ent_loss: torch.Tensor  # set to 0 if entropy is None
+    prob_true_act: torch.Tensor
+    l2_norm: torch.Tensor
+    l2_loss: torch.Tensor
+    loss: torch.Tensor
+
 
 @dataclasses.dataclass(frozen=True)
 class BehaviorCloningLossCalculator:
@@ -75,13 +76,8 @@ class BehaviorCloningLossCalculator:
     def __call__(
         self,
         policy: policies.ActorCriticPolicy,
-        obs: Union[
-            types.AnyTensor,
-            types.DictObs,
-            Dict[str, np.ndarray],
-            Dict[str, th.Tensor],
-        ],
-        acts: Union[th.Tensor, np.ndarray],
+        obs: dict[str, torch.Tensor],
+        acts: torch.Tensor,
     ) -> BCTrainingMetrics:
         """Calculate the supervised learning loss used to train the behavioral clone.
 
@@ -94,10 +90,7 @@ class BehaviorCloningLossCalculator:
             A BCTrainingMetrics object with the loss and all the components it
             consists of.
         """
-        tensor_obs = types.map_maybe_dict(
-            util.safe_to_tensor,
-            types.maybe_unwrap_dictobs(obs),
-        )
+        tensor_obs = obs
         acts = util.safe_to_tensor(acts)
 
         # policy.evaluate_actions's type signatures are incorrect.
@@ -106,16 +99,16 @@ class BehaviorCloningLossCalculator:
             tensor_obs,  # type: ignore[arg-type]
             acts,
         )
-        prob_true_act = th.exp(log_prob).mean()
+        prob_true_act = torch.exp(log_prob).mean()
         log_prob = log_prob.mean()
         entropy = entropy.mean() if entropy is not None else None
 
-        l2_norms = [th.sum(th.square(w)) for w in policy.parameters()]
+        l2_norms = [torch.sum(torch.square(w)) for w in policy.parameters()]
         l2_norm = sum(l2_norms) / 2  # divide by 2 to cancel with gradient of square
         # sum of list defaults to float(0) if len == 0.
-        assert isinstance(l2_norm, th.Tensor)
+        assert isinstance(l2_norm, torch.Tensor)
 
-        ent_loss = -self.ent_weight * (entropy if entropy is not None else th.zeros(1))
+        ent_loss = -self.ent_weight * (entropy if entropy is not None else torch.zeros(1))
         neglogp = -log_prob
         l2_loss = self.l2_weight * l2_norm
         loss = neglogp + ent_loss + l2_loss
@@ -183,7 +176,6 @@ class BC():
 
     Recovers a policy via supervised learning from observation-action pairs.
     """
-
     def __init__(
         self,
         *,
@@ -191,14 +183,14 @@ class BC():
         action_space: gym.Space,
         rng: np.random.Generator,
         policy: policies.ActorCriticPolicy = None,
-        demonstrations: th.Tensor = None,
+        demonstrations: torch.Tensor = None,
         batch_size: int = 32,
         minibatch_size: int = None,
-        optimizer_cls: th.optim.Optimizer = th.optim.Adam,
+        optimizer_cls: torch.optim.Optimizer = torch.optim.Adam,
         optimizer_kwargs: dict = None,
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
-        device: th.device = "cpu",
+        device: torch.device = "cpu",
     ):
         """Builds BC.
 
@@ -234,7 +226,7 @@ class BC():
                 parameter `l2_weight` instead), or if the batch size is not a multiple
                 of the minibatch size.
         """
-        self._demo_data_loader: types.TransitionMapping = None
+         self._demo_data = None
         self.batch_size = batch_size
         self.minibatch_size = minibatch_size or batch_size
         if self.batch_size % self.minibatch_size != 0:
@@ -260,7 +252,7 @@ class BC():
                 action_space=action_space,
                 # Set lr_schedule to max value to force error if policy.optimizer
                 # is used by mistake (should use self.optimizer instead).
-                lr_schedule=lambda _: th.finfo(th.float32).max,
+                lr_schedule=lambda _: torch.finfo(torch.float32).max,
                 features_extractor_class=extractor,
             )
         self._policy = policy.to(utils.get_device(device))
@@ -312,7 +304,7 @@ class BC():
             log_rollouts_venv: If not None, then this VecEnv (whose observation and
                 actions spaces must match `self.observation_space` and
                 `self.action_space`) is used to generate rollout stats, including
-                average return and average episode length. If None, then no rollouts
+                average return and average episode lengtorch. If None, then no rollouts
                 are generated.
             log_rollouts_n_episodes: Number of rollouts to generate when calculating
                 rollout stats. Non-positive number disables rollouts.
@@ -345,9 +337,9 @@ class BC():
         mini_per_batch = self.batch_size // self.minibatch_size
         n_minibatches = n_batches * mini_per_batch if n_batches is not None else None
 
-        assert self._demo_data_loader is not None
+        assert self._demo_data is not None
         demonstration_batches = BatchIteratorWithEpochEndCallback(
-            self._demo_data_loader,
+            self._demo_data,
             n_epochs,
             n_minibatches,
         )
@@ -385,7 +377,7 @@ class BC():
             minibatch_size,
             num_samples_so_far,
         ), batch in batches_with_stats:
-            obs_tensor: th.Tensor, Dict[str, th.Tensor]
+            obs_tensor: torch.Tensor, Dict[str, torch.Tensor]
             # unwraps the observation if it's a dictobs and converts arrays to tensors
             obs_tensor = types.map_maybe_dict(
                 lambda x: util.safe_to_tensor(x, device=self.policy.device),

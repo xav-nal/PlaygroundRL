@@ -1,6 +1,6 @@
 numpy
 torch>=1.1
-gym==0.23.1
+gymnasium[mujoco]
 tqdm
 yaml
 easydict

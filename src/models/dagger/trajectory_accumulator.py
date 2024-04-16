@@ -30,13 +30,14 @@ class TrajectoryAccumulator(abc.ABC):
         
 
     def finish_trajectory(self, env_id):
+        print("finish_trajectory")
         part_dicts = self.partial_trajectories[env_id]
         del self.partial_trajectories[env_id]
 
         return part_dicts
     
 
-    def add_step_and_auto_finish(self, acts, rews, next_obs, dones):
+    def add_steps_and_auto_finish(self, acts, rews, next_obs, dones):
 
         trajectories = []
         for env_idx in range(self.num_envs):

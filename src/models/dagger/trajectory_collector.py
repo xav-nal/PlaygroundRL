@@ -20,7 +20,6 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         self,
         venv: vec_env.VecEnv,
         beta: float,
-        save_dir: str,
         rng: np.random.Generator,
     ) -> None:
         """Builds InteractiveTrajectoryCollector.
@@ -28,14 +27,12 @@ class InteractiveTrajectoryCollector(vec_env.VecEnvWrapper):
         Args:
             venv: vectorized environment
             beta: 
-            save_dir: directory to save collected trajectories in
             rng: random number generation
         """
         super().__init__(venv)
 
         assert 0 <= beta <= 1
         self.beta = beta
-        self.save_dir = save_dir
         self._last_obs = None
         self._done_before = True
         self._is_reset = False

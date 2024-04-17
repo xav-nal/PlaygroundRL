@@ -17,7 +17,7 @@ class TrajectoryAccumulator(abc.ABC):
 
 
     def add_step(self, env_id, step_dict):
-        required_keys = {'acts', 'rews', 'next_obs', 'dones'}
+        required_keys = {'obs', 'acts', 'rews', 'dones'}
 
         assert all(key in step_dict for key in required_keys)
         assert len(step_dict.keys()) == len(required_keys)
@@ -37,19 +37,19 @@ class TrajectoryAccumulator(abc.ABC):
         return part_dicts
     
 
-    def add_steps_and_auto_finish(self, acts, rews, next_obs, dones):
+    def add_steps_and_auto_finish(self, obs, acts, rews, dones):
 
         trajectories = []
         for env_idx in range(self.num_envs):
             assert env_idx in self.partial_trajectories.keys()
 
 
-        for env_idx, (act, rew, next_ob, done) in enumerate(zip(acts, rews, next_obs, dones)):
+        for env_idx, (ob, act, rew, done) in enumerate(zip(obs, acts, rews, dones)):
 
             self.add_step(env_idx,
-                        dict(acts=act,
+                        dict(obs=ob,
+                            acts=act,
                             rews=rew,
-                            next_obs=next_ob,
                             dones=done,
                             ))
                 

@@ -14,13 +14,16 @@ import numpy as np
 import torch as th
 from stable_baselines3.common import policies, utils, vec_env
 
-from torch.utils import data as th_data
+
+from torch.utils.data import DataLoader
+
 
 
 from .beta_schedule import BetaSchedule,LinearBetaSchedule
 from .trajectory_collector import InteractiveTrajectoryCollector
 from .bc import BC
 from .rollout import generate_trajectories
+from .replay_buffer import ReplayBuffer
 
 
 DEFAULT_N_EPOCHS: int = 4
@@ -116,14 +119,11 @@ class DAggerTrainer():
             bc_train_kwargs["log_rollouts_venv"] = self.venv
 
         if "n_epochs" not in user_keys and "n_batches" not in user_keys:
-            bc_train_kwargs["n_epochs"] = self.DEFAULT_N_EPOCHS
+            bc_train_kwargs["n_epochs"] = DEFAULT_N_EPOCHS
 
-        logging.info("Loading demonstrations")
-        self._try_load_demos()
-        logging.info(f"Training at round {self.round_num}")
+
         self.bc_trainer.train(**bc_train_kwargs)
         self.round_num += 1
-        logging.info(f"New round number is {self.round_num}")
         return self.round_num
 
     def create_trajectory_collector(self) -> InteractiveTrajectoryCollector:
@@ -134,12 +134,11 @@ class DAggerTrainer():
             for the current round. Refer to the documentation for
             `InteractiveTrajectoryCollector` to see how to use this.
         """
-        save_dir = self._demo_dir_path_for_round()
+
         beta = self.beta_schedule(self.round_num)
         collector = InteractiveTrajectoryCollector(
             venv=self.venv,
             beta=beta,
-            save_dir=save_dir,
             rng=self.rng,
         )
         return collector
@@ -234,7 +233,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
         total_timestep_count = 0
         round_num = 0
 
+        combined_trajectories = []
+
         while total_timestep_count < total_timesteps:
+            print("round: ", round_num)
             collector = self.create_trajectory_collector()
             round_episode_count = 0
             round_timestep_count = 0
@@ -242,15 +244,22 @@ class SimpleDAggerTrainer(DAggerTrainer):
             trajectories = generate_trajectories(
                 policy=self.expert_policy,
                 venv=collector,
-                deterministic_policy=True,
-                rng=collector.rng,
             )
 
+            
             for traj in trajectories:
+                combined_trajectories.extend(traj)
                 round_timestep_count += len(traj)
                 total_timestep_count += len(traj)
 
             round_episode_count += len(trajectories)
+
+            rb = ReplayBuffer(combined_trajectories)
+
+            data_loader = DataLoader(rb, batch_size=self.batch_size,
+                                           shuffle=True, num_workers=4, pin_memory=True)
+            
+            self.bc_trainer.set_demonstrations(data_loader)
 
             self.extend_and_update(bc_train_kwargs)
             round_num += 1

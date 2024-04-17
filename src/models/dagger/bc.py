@@ -9,7 +9,7 @@ import dataclasses
 import gymnasium as gym
 import numpy as np
 
-import tqdm
+from tqdm import tqdm
 from stable_baselines3.common import policies, torch_layers, utils, vec_env
 
 
@@ -41,7 +41,7 @@ class BehaviorCloningLossCalculator:
     def __call__(
         self,
         policy: policies.ActorCriticPolicy,
-        obs: dict[str, torch.Tensor],
+        obs: torch.Tensor,
         acts: torch.Tensor,
     ) -> BCTrainingMetrics:
         """Calculate the supervised learning loss used to train the behavioral clone.
@@ -55,10 +55,9 @@ class BehaviorCloningLossCalculator:
             A BCTrainingMetrics object with the loss and all the components it
             consists of.
         """
-
         # policy.evaluate_actions's type signatures are incorrect.
         # See https://github.com/DLR-RM/stable-baselines3/issues/1679
-        (_, log_prob, entropy) = policy.evaluate_actions( obs, acts)
+        (_, log_prob, entropy) = policy.evaluate_actions(obs, acts)
 
         prob_true_act = torch.exp(log_prob).mean()
         log_prob = log_prob.mean()
@@ -99,7 +98,7 @@ class BC:
         action_space: gym.Space,
         rng: np.random.Generator,
         policy: policies.ActorCriticPolicy = None,
-        demonstrations: Dataset,
+        demonstrations: DataLoader = None,
         batch_size: int = 32,
         optimizer_cls: torch.optim.Optimizer = torch.optim.Adam,
         optimizer_kwargs: dict = None,
@@ -140,11 +139,10 @@ class BC:
                 of the minibatch size.
         """
         super().__init__()
+        self.device = device
         self.batch_size = batch_size
-        self.demonstrations = DataLoader(demonstrations, batch_size=self.batch_size,
-                                           shuffle=True, num_workers=4, pin_memory=True)
+        self.demonstrations = demonstrations
         
-
         self.action_space = action_space
         self.observation_space = observation_space
 
@@ -178,6 +176,9 @@ class BC:
 
         self.optimizer = optimizer_cls(self.policy.parameters(), **optimizer_kwargs)
         self.loss_calculator = BehaviorCloningLossCalculator(ent_weight, l2_weight)
+
+    def set_demonstrations(self, demonstrations: DataLoader) -> None:
+            self.demonstrations =demonstrations 
 
 
     def train(
@@ -222,9 +223,9 @@ class BC:
         for epoch in range(n_epochs):
             for batch_count, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
 
-                acts, obs = batch 
-                acts = acts.to(self.device)
+                obs, acts = batch 
                 obs  = obs.to(self.device)
+                acts = acts.to(self.device)
 
                 training_metrics = self.loss_calculator(self.policy, obs, acts)
 

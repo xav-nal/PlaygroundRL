@@ -23,7 +23,6 @@ def generate_trajectories(
         deterministic_policy: If True, asks policy to deterministically return
             action. Note the trajectories might still be non-deterministic if the
             environment has non-determinism!
-        rng: used for shuffling trajectories.
 
     Returns:
         Sequence of trajectories, satisfying `sample_until`. Additional trajectories
@@ -36,16 +35,6 @@ def generate_trajectories(
 
     obs = venv.reset()
 
-    init_acts = np.zeros((venv.num_envs, venv.action_space.shape[0]))
-    init_rews = np.zeros(venv.num_envs)
-    init_dones = np.zeros(venv.num_envs, dtype=bool)
-
-    for env_idx, (act, rew, next_ob, done) in enumerate(zip(init_acts, init_rews, obs, init_dones)):
-        step_dict = dict(acts=act, rews=rew, next_obs=next_ob, dones=done)
-        trajectories_accum.add_step(env_idx, step_dict)
-
-
- 
     active = np.ones(venv.num_envs, dtype=bool)
     dones = np.zeros(venv.num_envs, dtype=bool)
 
@@ -54,16 +43,18 @@ def generate_trajectories(
     print("Start generate Traj")
     while np.any(active):
         acts, _ = policy.predict(obs,deterministic=True)
-        next_obs, rews, dones, infos = venv.step(acts)
+        next_obs, rews, dones, _ = venv.step(acts)
 
         dones &= active
 
         new_trajs = trajectories_accum.add_steps_and_auto_finish(
+            obs[active],
             acts[active],
             rews[active],
-            next_obs[active],
             dones[active]
         )
+
+        obs = next_obs
 
         trajectories.extend(new_trajs)
 

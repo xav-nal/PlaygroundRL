@@ -1,16 +1,26 @@
 
+import torch
+from torch.utils.data import Dataset
 
-class ReplayBuffer():
-    def __init__(self,max_size=1000000):
-        self.data = []
+class ReplayBuffer(Dataset):
+    def __init__(self, samples_list):
+        self.data = samples_list
 
     def __len__(self):
-        return self.data.shape[0]
+        return len(self.data)
+
+    def add_samples(self, samples_list):
+        self.samples.append(samples_list)
+
+    def __getitem__(self, idx):
+        obs = self.data[idx]['next_obs']
+        acts = self.data[idx]['acts']
+
+        return torch.tensor(obs), torch.tensor(acts)
     
-    def add_rollout(self, rollout):
-        self.datat.append(rollout)
 
 
-    def sample_random_data(self,batch_size):
+
+
         
 

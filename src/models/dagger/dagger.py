@@ -32,7 +32,6 @@ class DAggerTrainer():
         self,
         *,
         venv: vec_env.VecEnv,
-        scratch_dir: str,
         rng: np.random.Generator,
         beta_schedule: BetaSchedule = None,
         bc_trainer: BC,
@@ -41,14 +40,12 @@ class DAggerTrainer():
 
         Args:
             venv: Vectorized training environment.
-            scratch_dir: Directory to use to store intermediate training
-                information (e.g. for resuming training).
             rng: random state for random number generation.
             beta_schedule: Provides a value of `beta` (the probability of taking
                 expert action in any given state) at each round of training. If
                 `None`, then `linear_beta_schedule` will be used instead.
             bc_trainer: A `BC` instance used to train the underlying policy.
-            custom_logger: Where to log to; if None (default), creates a new logger.
+
         """
         super().__init__()
 
@@ -56,7 +53,6 @@ class DAggerTrainer():
             beta_schedule = LinearBetaSchedule(15)
 
         self.beta_schedule = beta_schedule
-        self.scratch_dir = scratch_dir
         self.venv = venv
         self.round_num = 0
         self._last_loaded_round = -1
@@ -69,13 +65,13 @@ class DAggerTrainer():
             bc_trainer.action_space,
         )
         self.bc_trainer = bc_trainer
-        self.bc_trainer.logger = self.logger
+
 
     def __getstate__(self):
         """Return state excluding non-pickleable objects."""
         d = dict(self.__dict__)
         del d["venv"]
-        del d["_logger"]
+
         return d
 
     @property
@@ -156,10 +152,10 @@ class SimpleDAggerTrainer(DAggerTrainer):
         self,
         *,
         venv: vec_env.VecEnv,
-        scratch_dir: str,
         expert_policy: policies.BasePolicy,
         rng: np.random.Generator,
         expert_trajs: list = None,
+        **dagger_trainer_kwargs,
     ):
         """Builds SimpleDAggerTrainer.
 
@@ -168,8 +164,7 @@ class SimpleDAggerTrainer(DAggerTrainer):
                 action is randomly injected (in accordance with `beta_schedule`
                 argument), every individual environment will get a robot action
                 simultaneously for that timestep.
-            scratch_dir: Directory to use to store intermediate training
-                information (e.g. for resuming training).
+
             expert_policy: The expert policy used to generate synthetic demonstrations.
             rng: Random state to use for the random number generator.
             expert_trajs: Optional starting dataset that is inserted into the round 0
@@ -183,8 +178,8 @@ class SimpleDAggerTrainer(DAggerTrainer):
         """
         super().__init__(
             venv=venv,
-            scratch_dir=scratch_dir,
             rng=rng,
+            **dagger_trainer_kwargs,
         )
 
         self.expert_policy = expert_policy
@@ -194,21 +189,6 @@ class SimpleDAggerTrainer(DAggerTrainer):
         if expert_policy.action_space != self.venv.action_space:
             raise ValueError("Mismatched action space between expert_policy and venv")
 
-        # TODO(shwang):
-        #   Might welcome Transitions and DataLoaders as sources of expert data
-        #   in the future too, but this will require some refactoring, so for
-        #   now we just have `expert_trajs`.
-        if expert_trajs is not None:
-            # Save each initial expert trajectory into the "round 0" demonstration
-            # data directory.
-            for traj_index, traj in enumerate(expert_trajs):
-                _save_dagger_demo(
-                    traj,
-                    traj_index,
-                    self._demo_dir_path_for_round(),
-                    self.rng,
-                    prefix="initial_data",
-                )
 
     def train(
         self,
@@ -272,6 +252,5 @@ class SimpleDAggerTrainer(DAggerTrainer):
 
             round_episode_count += len(trajectories)
 
-            # `logger.dump` is called inside BC.train within the following fn call:
             self.extend_and_update(bc_train_kwargs)
             round_num += 1

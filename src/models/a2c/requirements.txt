@@ -1,5 +1,0 @@
-numpy
-torch>=1.1
-tqdm
-yaml
-easydict

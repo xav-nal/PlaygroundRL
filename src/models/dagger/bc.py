@@ -221,6 +221,7 @@ class BC:
         assert self.demonstrations is not None
 
         for epoch in range(n_epochs):
+            print("Epoch ", epoch)
             for batch_count, batch in enumerate(tqdm(self.demonstrations, desc='Training '), 0):
 
                 obs, acts = batch 
@@ -234,6 +235,12 @@ class BC:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+
+                if batch_count % 100 == 0:
+                    print("loss", loss)
+                    
+
+           
 
 
     @property
